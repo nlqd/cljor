@@ -1,0 +1,27 @@
+body { max-width: 800px; margin: 0 auto; padding: 1rem; font-family: system-ui, sans-serif; }
+h1 { font-size: 1.25rem; margin-bottom: 1rem; color: #111; }
+#messages {
+  height: 65vh; overflow-y: auto; border: 1px solid #e5e7eb;
+  border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #f9fafb;
+  display: flex; flex-direction: column; gap: .75rem;
+}
+.message { padding: .5rem .75rem; border-radius: 8px; max-width: 85%; word-break: break-word; }
+.user { background: #2563eb; color: white; align-self: flex-end; }
+.assistant { background: white; border: 1px solid #e5e7eb; align-self: flex-start; }
+.assistant p { margin: 0 0 .5rem; line-height: 1.6; }
+.assistant p:last-child { margin-bottom: 0; }
+.assistant pre { background: #f4f4f4; padding: .75rem; border-radius: 4px; overflow-x: auto; font-size: .875rem; }
+.assistant code { background: #f4f4f4; padding: .125rem .25rem; border-radius: 3px; font-size: .875rem; }
+.assistant pre code { background: none; padding: 0; }
+#input-area { display: flex; gap: .5rem; }
+#message-input {
+  flex: 1; padding: .5rem .75rem; border: 1px solid #d1d5db;
+  border-radius: 6px; font-size: 1rem; outline: none;
+}
+#message-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+button {
+  padding: .5rem 1.25rem; background: #2563eb; color: white;
+  border: none; border-radius: 6px; cursor: pointer; font-size: 1rem; font-weight: 500;
+}
+button:hover { background: #1d4ed8; }
+button:disabled, #message-input:disabled { opacity: .6; cursor: not-allowed; }
