@@ -3,6 +3,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is use-fixtures testing]]
             [openrouter.core :as or-client]
+            [openrouter.mock-openrouter :as mock]
             [openrouter.web :as web])
   (:import [java.io BufferedReader InputStreamReader]
            [java.net HttpURLConnection URL]))
@@ -118,3 +119,21 @@
               token-events (filter #(= "token" (:event %)) parsed)]
           ;; SSE joins multi-line data back with \n
           (is (= "line1\nline2" (:data (first token-events)))))))))
+
+;;; ── true e2e: no with-redefs, real HTTP through the full stack ───────────────
+
+(deftest e2e-stream-via-mock-openrouter-server
+  (testing "chat UI proxies tokens from a real mock OpenRouter HTTP server"
+    (let [tokens      ["Hello" ", " "world" "!"]
+          mock-handle (mock/start! tokens)
+          [_ mock-port] mock-handle]
+      (try
+        ;; Swap the client so the chat UI hits the mock instead of openrouter.ai
+        (reset! web/!client
+          (or-client/make-client {:api-key  "sk-test"
+                                  :base-url (str "http://localhost:" mock-port)}))
+        (let [events       (read-sse (get-stream (str "http://localhost:" *port* "/stream?q=hello")))
+              token-events (filter #(= "token" (:event %)) events)]
+          (is (= tokens (mapv :data token-events)))
+          (is (some #(= "done" (:event %)) events)))
+        (finally (mock/stop! mock-handle))))))
