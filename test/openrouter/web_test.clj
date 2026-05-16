@@ -72,8 +72,11 @@
     (.connect conn)
     (is (= 400 (.getResponseCode conn)))))
 
+(defn- count-events [parsed type]
+  (count (filter #(= type (:event %)) parsed)))
+
 (deftest stream-delivers-token-events
-  (testing "each token from complete-stream arrives as an SSE token event"
+  (testing "each token from complete-stream arrives as an SSE token event, followed by exactly one done"
     (let [tokens ["Hello" ", " "world" "!"]
           ch     (async/chan 10)]
       (doseq [t tokens]
@@ -84,17 +87,17 @@
               parsed (read-sse events)
               token-events (filter #(= "token" (:event %)) parsed)]
           (is (= tokens (mapv :data token-events)))
-          (is (some #(= "done" (:event %)) parsed)))))))
+          (is (= 1 (count-events parsed "done"))))))))
 
-(deftest stream-ends-with-done-on-error
-  (testing "a Throwable on the channel still produces a done event"
+(deftest stream-ends-with-exactly-one-done-on-error
+  (testing "a Throwable on the channel produces exactly one done event"
     (let [ch (async/chan 2)]
       (async/>!! ch (ex-info "boom" {}))
       (async/close! ch)
       (with-redefs [or-client/complete-stream (fn [_ _] ch)]
         (let [events (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
               parsed (read-sse events)]
-          (is (some #(= "done" (:event %)) parsed)))))))
+          (is (= 1 (count-events parsed "done"))))))))
 
 (deftest stream-skips-nil-content-deltas
   (testing "events with no :content field (e.g. finish_reason deltas) are silently dropped"

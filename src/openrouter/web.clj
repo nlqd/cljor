@@ -40,6 +40,9 @@
             (str/join "\n"))
        "\n\n"))
 
+(defn- safe-write! [w s]
+  (try (.write w s) (.flush w) (catch Exception _)))
+
 (defn- write-sse! [client model q out]
   (with-open [w (java.io.OutputStreamWriter. out "UTF-8")]
     (try
@@ -47,16 +50,13 @@
                                                   :messages [{:role "user" :content q}]})]
         (loop []
           (when-let [event (<!! ch)]
-            (if (instance? Throwable event)
-              (do (.write w (sse-event "done" "")) (.flush w))
-              (do (when-let [token (get-in event [:choices 0 :delta :content])]
-                    (.write w (sse-event "token" token))
-                    (.flush w))
-                  (recur)))))
-        (.write w (sse-event "done" ""))
-        (.flush w))
-      (catch Exception _
-        (try (.write w (sse-event "done" "")) (.flush w) (catch Exception _))))))
+            (when-not (instance? Throwable event)
+              (when-let [token (get-in event [:choices 0 :delta :content])]
+                (safe-write! w (sse-event "token" token)))
+              (recur)))))
+      (catch Exception _ nil)
+      (finally
+        (safe-write! w (sse-event "done" ""))))))
 
 (defn stream-response
   "Builds a Ring SSE response using StreamableResponseBody.
