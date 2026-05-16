@@ -5,6 +5,7 @@
             [compojure.route :as route]
             [hiccup.core :refer [html]]
             [ring.adapter.jetty :as jetty]
+            [ring.core.protocols :as proto]
             [ring.middleware.params :refer [wrap-params]]
             [openrouter.core :as or-client])
   (:gen-class))
@@ -39,35 +40,36 @@
             (str/join "\n"))
        "\n\n"))
 
+(defn- write-sse! [client model q out]
+  (with-open [w (java.io.OutputStreamWriter. out "UTF-8")]
+    (try
+      (let [ch (or-client/complete-stream client {:model    model
+                                                  :messages [{:role "user" :content q}]})]
+        (loop []
+          (when-let [event (<!! ch)]
+            (if (instance? Throwable event)
+              (do (.write w (sse-event "done" "")) (.flush w))
+              (do (when-let [token (get-in event [:choices 0 :delta :content])]
+                    (.write w (sse-event "token" token))
+                    (.flush w))
+                  (recur)))))
+        (.write w (sse-event "done" ""))
+        (.flush w))
+      (catch Exception _
+        (try (.write w (sse-event "done" "")) (.flush w) (catch Exception _))))))
+
 (defn stream-response
-  "Builds a Ring SSE response that consumes a complete-stream channel.
+  "Builds a Ring SSE response using StreamableResponseBody.
    Exported (non-private) for testability."
   [client model q]
-  (let [pout (java.io.PipedOutputStream.)
-        pin  (java.io.PipedInputStream. pout)]
-    (future
-      (with-open [w (java.io.OutputStreamWriter. pout "UTF-8")]
-        (try
-          (let [ch (or-client/complete-stream client {:model    model
-                                                      :messages [{:role "user" :content q}]})]
-            (loop []
-              (when-let [event (<!! ch)]
-                (if (instance? Throwable event)
-                  (do (.write w (sse-event "done" "")) (.flush w))
-                  (do (when-let [token (get-in event [:choices 0 :delta :content])]
-                        (.write w (sse-event "token" token))
-                        (.flush w))
-                      (recur)))))
-            (.write w (sse-event "done" ""))
-            (.flush w))
-          (catch Exception _
-            (try (.write w (sse-event "done" "")) (.flush w) (catch Exception _))))))
-    {:status  200
-     :headers {"Content-Type"      "text/event-stream"
-               "Cache-Control"     "no-cache"
-               "Connection"        "keep-alive"
-               "X-Accel-Buffering" "no"}
-     :body    pin}))
+  {:status  200
+   :headers {"Content-Type"      "text/event-stream"
+             "Cache-Control"     "no-cache"
+             "Connection"        "keep-alive"
+             "X-Accel-Buffering" "no"}
+   :body    (reify proto/StreamableResponseBody
+              (write-body-to-stream [_ _ out]
+                (write-sse! client model q out)))})
 
 (defroutes app-routes
   (GET "/" [] {:status 200 :headers {"Content-Type" "text/html"} :body (page)})
