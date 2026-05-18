@@ -3,7 +3,7 @@
             [clojure.string :as str]
             [compojure.core :refer [GET defroutes]]
             [compojure.route :as route]
-            [hiccup.core :refer [html]]
+            [hiccup2.core :refer [html]]
             [ring.adapter.jetty :as jetty]
             [ring.core.protocols :as proto]
             [ring.middleware.params :refer [wrap-params]]
