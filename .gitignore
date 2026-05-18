@@ -1,0 +1,7 @@
+.cpcache/
+.env
+.claude/
+.lsp/
+.clj-kondo/
+target/
+.nrepl-port
