@@ -27,6 +27,20 @@ Then open http://localhost:3000.
 clojure -X:test
 ```
 
+## REPL (reloaded workflow)
+
+```
+clojure -M:dev
+```
+
+Drops into a REPL with `dev/user.clj` loaded:
+
+```clojure
+(go)     ; build and start the Component system
+(stop)   ; shut it down
+(reset)  ; stop, reload changed namespaces, restart
+```
+
 ## Library use
 
 ```clojure
