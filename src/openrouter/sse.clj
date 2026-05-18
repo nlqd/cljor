@@ -7,25 +7,28 @@
 (def ^:private data-prefix "data: ")
 (def ^:private done-sentinel "[DONE]")
 
+(def ^:private event-xform
+  "Transducer over raw SSE lines: keep `data:` lines, strip the prefix,
+   stop at [DONE], decode JSON."
+  (comp
+   (filter #(str/starts-with? % data-prefix))
+   (map    #(subs % (count data-prefix)))
+   (take-while #(not= done-sentinel %))
+   (map #(json/read-value % json/keyword-keys-object-mapper))))
+
 (defn event-stream->chan
   "Parses an SSE InputStream into a core.async channel of decoded maps.
-   The channel closes after [DONE] or stream end. Errors are put as Throwable."
+   The channel closes after [DONE] or stream end. Parse errors land on
+   the channel as Throwables via the channel's exception handler."
   [^InputStream input-stream & {:keys [buf-size] :or {buf-size 32}}]
-  (let [ch (async/chan buf-size)]
+  (let [ch (async/chan buf-size event-xform identity)]
     (async/thread
       (try
         (with-open [reader (BufferedReader. (InputStreamReader. input-stream "UTF-8"))]
-          (loop []
-            (when-let [line (.readLine reader)]
-              (if (str/starts-with? line data-prefix)
-                (let [payload (subs line (count data-prefix))]
-                  (if (= payload done-sentinel)
-                    nil ; close naturally after loop exits
-                    (do
-                      (async/>!! ch (json/read-value payload json/keyword-keys-object-mapper))
-                      (recur))))
-                (recur)))))
+          (doseq [line (line-seq reader)]
+            (async/>!! ch line)))
         (catch Throwable t
-          (async/>!! ch t)))
-      (async/close! ch))
+          (async/>!! ch t))
+        (finally
+          (async/close! ch))))
     ch))
