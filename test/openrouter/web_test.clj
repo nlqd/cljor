@@ -1,22 +1,20 @@
 (ns openrouter.web-test
   (:require [clojure.core.async :as async]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is use-fixtures testing]]
+            [clojure.test :refer [deftest is testing use-fixtures]]
+            [com.stuartsierra.component :as component]
             [openrouter.core :as or-client]
             [openrouter.mock-openrouter :as mock]
-            [openrouter.web :as web])
+            [openrouter.system :as system])
   (:import [java.io BufferedReader InputStreamReader]
            [java.net HttpURLConnection URL]))
 
 ;;; ── helpers ──────────────────────────────────────────────────────────────────
 
-(defn- server-port [server]
-  (-> server .getConnectors (aget 0) .getLocalPort))
+(defn- server-port [jetty]
+  (-> jetty .getConnectors (aget 0) .getLocalPort))
 
-(defn- read-sse
-  "Reads SSE events from an InputStream until EOF.
-   Returns a vector of {:event type :data value} maps."
-  [stream]
+(defn- read-sse [stream]
   (with-open [rdr (BufferedReader. (InputStreamReader. stream "UTF-8"))]
     (loop [events [] cur {}]
       (if-let [line (.readLine rdr)]
@@ -34,32 +32,29 @@
           :else (recur events cur))
         (cond-> events (seq cur) (conj cur))))))
 
-(defn- get-stream
-  "Opens an HTTP GET to url with Accept: text/event-stream.
-   Returns the InputStream of the response body."
-  [url-str]
+(defn- get-stream [url-str]
   (let [conn (cast HttpURLConnection (.openConnection (URL. url-str)))]
     (.setRequestProperty conn "Accept" "text/event-stream")
     (.connect conn)
     (.getInputStream conn)))
 
-;;; ── fixtures ─────────────────────────────────────────────────────────────────
+(defn- count-events [parsed type]
+  (count (filter #(= type (:event %)) parsed)))
 
+;;; ── fixture ──────────────────────────────────────────────────────────────────
+
+(def ^:dynamic *system* nil)
 (def ^:dynamic *port* nil)
-(def ^:dynamic *server* nil)
 
-(defn with-server [f]
-  ;; Set a dummy client so the /stream guard passes
-  (reset! web/!client {:config {:api-key "sk-test" :base-url "x" :timeout-ms 1000}
-                       :http-client nil})
-  (let [server (web/start-server! 0)
-        port   (server-port server)]
-    (binding [*server* server *port* port]
-      (try (f) (finally (.stop server))))))
+(defn with-system [f]
+  (let [sys (component/start (system/system {:api-key "sk-test" :port 0}))]
+    (binding [*system* sys
+              *port*   (server-port (-> sys :web :jetty))]
+      (try (f) (finally (component/stop sys))))))
 
-(use-fixtures :each with-server)
+(use-fixtures :each with-system)
 
-;;; ── tests ────────────────────────────────────────────────────────────────────
+;;; ── route smoke tests ────────────────────────────────────────────────────────
 
 (deftest home-page-returns-200
   (let [conn (cast HttpURLConnection (.openConnection (URL. (str "http://localhost:" *port* "/"))))]
@@ -72,8 +67,7 @@
     (.connect conn)
     (is (= 400 (.getResponseCode conn)))))
 
-(defn- count-events [parsed type]
-  (count (filter #(= type (:event %)) parsed)))
+;;; ── SSE encoding tests (redef the streaming source) ──────────────────────────
 
 (deftest stream-delivers-token-events
   (testing "each token from complete-stream arrives as an SSE token event, followed by exactly one done"
@@ -120,23 +114,24 @@
         (let [events (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
               parsed (read-sse events)
               token-events (filter #(= "token" (:event %)) parsed)]
-          ;; SSE joins multi-line data back with \n
           (is (= "line1\nline2" (:data (first token-events)))))))))
 
-;;; ── true e2e: no with-redefs, real HTTP through the full stack ───────────────
+;;; ── true e2e: real HTTP through the full stack ───────────────────────────────
 
 (deftest e2e-stream-via-mock-openrouter-server
   (testing "chat UI proxies tokens from a real mock OpenRouter HTTP server"
-    (let [tokens      ["Hello" ", " "world" "!"]
-          mock-handle (mock/start! tokens)
-          [_ mock-port] mock-handle]
+    (let [tokens ["Hello" ", " "world" "!"]
+          [mock-server mock-port] (mock/start! tokens)
+          sys (component/start
+                (system/system {:api-key  "sk-test"
+                                :base-url (str "http://localhost:" mock-port)
+                                :port     0}))
+          web-port (server-port (-> sys :web :jetty))]
       (try
-        ;; Swap the client so the chat UI hits the mock instead of openrouter.ai
-        (reset! web/!client
-          (or-client/make-client {:api-key  "sk-test"
-                                  :base-url (str "http://localhost:" mock-port)}))
-        (let [events       (read-sse (get-stream (str "http://localhost:" *port* "/stream?q=hello")))
+        (let [events       (read-sse (get-stream (str "http://localhost:" web-port "/stream?q=hello")))
               token-events (filter #(= "token" (:event %)) events)]
           (is (= tokens (mapv :data token-events)))
           (is (some #(= "done" (:event %)) events)))
-        (finally (mock/stop! mock-handle))))))
+        (finally
+          (component/stop sys)
+          (mock/stop! [mock-server]))))))
