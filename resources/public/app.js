@@ -19,7 +19,6 @@ function sendMessage() {
 
   const asstDiv = document.createElement('div');
   asstDiv.className = 'message assistant';
-  asstDiv.dataset.raw = '';
   msgs.appendChild(asstDiv);
   msgs.scrollTop = msgs.scrollHeight;
 
@@ -29,28 +28,27 @@ function sendMessage() {
   let done = false;
   const es = new EventSource('/stream?q=' + encodeURIComponent(text));
 
-  es.addEventListener('token', function(evt) {
-    asstDiv.dataset.raw += evt.data;
-    asstDiv.innerHTML = marked.parse(asstDiv.dataset.raw);
+  es.addEventListener('token', (evt) => {
+    asstDiv.textContent += evt.data;
     msgs.scrollTop = msgs.scrollHeight;
   });
 
-  es.addEventListener('done', function() {
+  es.addEventListener('done', () => {
     done = true;
     es.close();
     setEnabled(true);
   });
 
-  es.addEventListener('error', function() {
+  es.addEventListener('error', () => {
     if (!done) {
       es.close();
-      asstDiv.innerHTML += '<p><em>[connection error]</em></p>';
+      asstDiv.textContent += '\n[connection error]';
       setEnabled(true);
     }
   });
 }
 
 btn.addEventListener('click', sendMessage);
-input.addEventListener('keydown', function(e) {
+input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });

@@ -30,7 +30,6 @@
             [:input {:id "message-input" :type "text"
                      :placeholder "Type a message..." :autocomplete "off"}]
             [:button {:id "send-btn" :type "button"} "Send"]]
-           [:script {:src "https://cdn.jsdelivr.net/npm/marked/marked.min.js"}]
            [:script {:src "/app.js"}]]])))
 
 (defn- sse-event [type data]
