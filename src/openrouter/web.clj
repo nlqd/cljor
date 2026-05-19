@@ -1,12 +1,16 @@
 (ns openrouter.web
   (:require [clojure.core.async :refer [<!!]]
             [clojure.string :as str]
-            [compojure.core :refer [GET routes]]
-            [compojure.route :as route]
             [hiccup2.core :refer [html]]
+            [jsonista.core :as json]
+            [reitit.coercion.malli :as rcm]
+            [reitit.ring :as ring]
+            [reitit.ring.coercion :as rrc]
+            [reitit.ring.middleware.parameters :as parameters]
             [ring.core.protocols :as proto]
-            [ring.middleware.params :refer [wrap-params]]
             [openrouter.core :as or-client]))
+
+;;; ── HTML page ────────────────────────────────────────────────────────────────
 
 (defn- page []
   (str "<!DOCTYPE html>"
@@ -26,6 +30,8 @@
            [:button {:id "send-btn" :type "button"} "Send"]]
           [:script {:src "/app.js"}]]])))
 
+;;; ── SSE encoding ─────────────────────────────────────────────────────────────
+
 (defn- sse-event [type data]
   (str "event: " type "\n"
        (->> (str/split-lines (str data))
@@ -36,24 +42,36 @@
 (defn- safe-write! [w s]
   (try (.write w s) (.flush w) (catch Exception _)))
 
+(defn- anomaly->payload
+  "Encode the anomaly's category and message as a JSON string for the SSE
+   `done` event. Returns empty string when no anomaly is present."
+  [a]
+  (if-let [cat (:cognitect.anomalies/category a)]
+    (json/write-value-as-string
+     (cond-> {:category cat}
+       (:cognitect.anomalies/message a)
+       (assoc :message (:cognitect.anomalies/message a))))
+    ""))
+
 (defn- write-sse! [client model q out]
   (with-open [w (java.io.OutputStreamWriter. out "UTF-8")]
-    (try
-      (let [ch (or-client/complete-stream client {:model    model
-                                                  :messages [{:role "user" :content q}]})]
-        (loop []
-          (when-let [event (<!! ch)]
-            (when-not (instance? Throwable event)
-              (when-let [token (get-in event [:choices 0 :delta :content])]
-                (safe-write! w (sse-event "token" token)))
-              (recur)))))
-      (catch Exception _ nil)
-      (finally
-        (safe-write! w (sse-event "done" ""))))))
+    (let [!anomaly (volatile! nil)]
+      (try
+        (let [ch (or-client/complete-stream client {:model    model
+                                                    :messages [{:role "user" :content q}]})]
+          (loop []
+            (when-let [event (<!! ch)]
+              (if (instance? Throwable event)
+                (vreset! !anomaly (ex-data event))
+                (do (when-let [token (get-in event [:choices 0 :delta :content])]
+                      (safe-write! w (sse-event "token" token)))
+                    (recur))))))
+        (catch Exception e
+          (vreset! !anomaly (ex-data e)))
+        (finally
+          (safe-write! w (sse-event "done" (anomaly->payload @!anomaly))))))))
 
-(defn stream-response
-  "Builds a Ring SSE response using StreamableResponseBody."
-  [client model q]
+(defn- stream-response [client model q]
   {:status  200
    :headers {"Content-Type"      "text/event-stream"
              "Cache-Control"     "no-cache"
@@ -63,16 +81,52 @@
               (write-body-to-stream [_ _ out]
                 (write-sse! client model q out)))})
 
+;;; ── route table ──────────────────────────────────────────────────────────────
+
+(defn- home-handler [_req]
+  {:status  200
+   :headers {"Content-Type" "text/html; charset=utf-8"}
+   :body    (page)})
+
+(defn- stream-handler
+  "Closes over the client + model from `make-handler`."
+  [client model]
+  (fn [req]
+    (let [q (-> req :parameters :query :q)]
+      (stream-response client model q))))
+
+(defn- routes
+  [client model]
+  [["/"        {:get {:handler home-handler}}]
+   ["/stream"  {:get {:parameters {:query [:map [:q [:string {:min 1}]]]}
+                      :handler    (stream-handler client model)}}]])
+
+(def ^:private router-data
+  {:coercion   rcm/coercion
+   :middleware [parameters/parameters-middleware
+                rrc/coerce-exceptions-middleware
+                rrc/coerce-request-middleware]})
+
+(defn- wrap-json-body
+  "Coercion errors return Clojure maps as :body. Jetty needs bytes, so we
+   JSON-encode any map-bodied response on the way out. Streaming bodies
+   (StreamableResponseBody) and string/byte bodies pass through untouched."
+  [handler]
+  (fn [req]
+    (let [resp (handler req)]
+      (if (map? (:body resp))
+        (-> resp
+            (update :body json/write-value-as-string)
+            (assoc-in [:headers "Content-Type"] "application/json; charset=utf-8"))
+        resp))))
+
 (defn make-handler
-  "Builds a Ring handler closing over the OpenRouter client and model.
-   No global state — call from a system/component during start."
-  [{:keys [client model]}]
-  (-> (routes
-       (GET "/" [] {:status 200 :headers {"Content-Type" "text/html"} :body (page)})
-       (GET "/stream" [q]
-         (if (and client (seq q))
-           (stream-response client model q)
-           {:status 400 :body "Missing query or client not initialized"}))
-       (route/resources "/")
-       (route/not-found "Not found"))
-      wrap-params))
+  "Build a reitit ring handler closing over the OpenRouter client and model.
+   No global state; call from a Component during start."
+  [{:openrouter.web/keys [client model]}]
+  (-> (ring/ring-handler
+       (ring/router (routes client model) {:data router-data})
+       (ring/routes
+        (ring/create-resource-handler {:path "/"})
+        (ring/create-default-handler)))
+      wrap-json-body))

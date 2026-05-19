@@ -10,11 +10,11 @@
 (repl/set-refresh-dirs "src" "dev" "test")
 
 (def ^:private config
-  {:api-key      (or (System/getenv "OPENROUTER_API_KEY") "sk-dev")
-   :model        (or (System/getenv "OPENROUTER_MODEL") "openai/gpt-4o-mini")
-   :http-referer "http://localhost:3000"
-   :x-title      "OpenRouter Chat Dev"
-   :port         3000})
+  {:openrouter.config/api-key      (or (System/getenv "OPENROUTER_API_KEY") "sk-dev")
+   :openrouter.config/http-referer "http://localhost:3000"
+   :openrouter.config/x-title      "OpenRouter Chat Dev"
+   :openrouter.web/model           (or (System/getenv "OPENROUTER_MODEL") "openai/gpt-4o-mini")
+   :openrouter.web/port            3000})
 
 (def system nil)
 

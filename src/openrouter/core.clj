@@ -5,12 +5,12 @@
             [openrouter.models :as models]))
 
 (defn make-client
-  "Build a client map from opts. :api-key is required.
-   Optional: :base-url :http-referer :x-title :timeout-ms"
+  "Build a client value from opts. See `openrouter.config/make-client`
+   for the opts keys."
   [opts]
   (let [cfg (config/make-client opts)]
-    {:config      cfg
-     :http-client (client/build-http-client cfg)}))
+    {:openrouter.client/config      cfg
+     :openrouter.client/http-client (client/build-http-client cfg)}))
 
 (def complete        chat/complete)
 (def complete-stream chat/complete-stream)

@@ -1,12 +1,16 @@
 (ns openrouter.models
-  (:require [openrouter.client :as client]))
+  (:require [openrouter.request :as request]))
 
 (defn list-models
   "Returns {:data [{:id ... :name ... } ...]}."
-  [{:keys [config http-client]}]
-  (client/get! config http-client "/models"))
+  [client]
+  (request/execute! client
+                    {:openrouter.request/method :get
+                     :openrouter.request/path   "/models"}))
 
 (defn model-count
   "Returns {:data {:total ...}}."
-  [{:keys [config http-client]}]
-  (client/get! config http-client "/models/count"))
+  [client]
+  (request/execute! client
+                    {:openrouter.request/method :get
+                     :openrouter.request/path   "/models/count"}))

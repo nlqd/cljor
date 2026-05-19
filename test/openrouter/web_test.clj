@@ -47,9 +47,11 @@
 (def ^:dynamic *port* nil)
 
 (defn with-system [f]
-  (let [sys (component/start (system/system {:api-key "sk-test" :port 0}))]
+  (let [sys (component/start
+             (system/system {:openrouter.config/api-key "sk-test"
+                             :openrouter.web/port       0}))]
     (binding [*system* sys
-              *port*   (server-port (-> sys :web :jetty))]
+              *port*   (server-port (-> sys :openrouter.system/web :jetty))]
       (try (f) (finally (component/stop sys))))))
 
 (use-fixtures :each with-system)
@@ -62,10 +64,18 @@
     (is (= 200 (.getResponseCode conn)))
     (is (str/includes? (.getContentType conn) "text/html"))))
 
+(defn- read-body [conn]
+  (let [s (or (try (.getInputStream conn) (catch Exception _ nil))
+              (.getErrorStream conn))]
+    (slurp s)))
+
 (deftest stream-missing-query-returns-400
   (let [conn (cast HttpURLConnection (.openConnection (URL. (str "http://localhost:" *port* "/stream"))))]
     (.connect conn)
-    (is (= 400 (.getResponseCode conn)))))
+    (is (= 400 (.getResponseCode conn)))
+    (testing "coercion error body is JSON describing the missing key"
+      (is (str/includes? (.getContentType conn) "application/json"))
+      (is (str/includes? (read-body conn) "request-coercion")))))
 
 ;;; ── SSE encoding tests (redef the streaming source) ──────────────────────────
 
@@ -92,6 +102,22 @@
         (let [events (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
               parsed (read-sse events)]
           (is (= 1 (count-events parsed "done"))))))))
+
+(deftest done-event-carries-anomaly-category
+  (testing "when the upstream error has anomaly ex-data, done event echoes the category"
+    (let [ch (async/chan 2)]
+      (async/>!! ch (ex-info "rate limited"
+                             {:cognitect.anomalies/category :busy
+                              :cognitect.anomalies/message  "rate limited"
+                              :openrouter.anomaly/status    429}))
+      (async/close! ch)
+      (with-redefs [or-client/complete-stream (fn [_ _] ch)]
+        (let [events     (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
+              parsed     (read-sse events)
+              done-event (first (filter #(= "done" (:event %)) parsed))]
+          (is (some? done-event))
+          (is (str/includes? (:data done-event) "busy"))
+          (is (str/includes? (:data done-event) "rate limited")))))))
 
 (deftest stream-skips-nil-content-deltas
   (testing "events with no :content field (e.g. finish_reason deltas) are silently dropped"
@@ -123,10 +149,10 @@
     (let [tokens ["Hello" ", " "world" "!"]
           [mock-server mock-port] (mock/start! tokens)
           sys (component/start
-                (system/system {:api-key  "sk-test"
-                                :base-url (str "http://localhost:" mock-port)
-                                :port     0}))
-          web-port (server-port (-> sys :web :jetty))]
+               (system/system {:openrouter.config/api-key  "sk-test"
+                               :openrouter.config/base-url (str "http://localhost:" mock-port)
+                               :openrouter.web/port        0}))
+          web-port (server-port (-> sys :openrouter.system/web :jetty))]
       (try
         (let [events       (read-sse (get-stream (str "http://localhost:" web-port "/stream?q=hello")))
               token-events (filter #(= "token" (:event %)) events)]
