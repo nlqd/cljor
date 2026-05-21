@@ -3,7 +3,8 @@
             [clojure.test :refer [deftest is testing]]
             [hato.client :as hato]
             [jsonista.core :as json]
-            [openrouter.core :as or-core]
+            [openrouter.client :as client]
+            [openrouter.config :as-alias config]
             [openrouter.request :as request]))
 
 (defn- captured-hato
@@ -15,11 +16,10 @@
 (deftest non-streaming-post-roundtrip
   (let [[seen stub] (captured-hato {:status 200 :body "{\"ok\":true}"})]
     (with-redefs [hato/request stub]
-      (let [client (or-core/make-client {:openrouter.config/api-key "sk-test"})
-            body   (request/execute! client
-                                     {:openrouter.request/method :post
-                                      :openrouter.request/path   "/chat/completions"
-                                      :openrouter.request/body   {:model "x"}})]
+      (let [c    (client/make-client {::config/api-key "sk-test"})
+            body (request/execute! c {:method :post
+                                      :path   "/chat/completions"
+                                      :body   {:model "x"}})]
         (testing "decoded body"
           (is (= {:ok true} body)))
         (testing "wire request"
@@ -34,12 +34,11 @@
         [_ stub] (captured-hato {:status 200
                                  :body (java.io.ByteArrayInputStream. bytes)})]
     (with-redefs [hato/request stub]
-      (let [client (or-core/make-client {:openrouter.config/api-key "sk-test"})
-            result (request/execute! client
-                                     {:openrouter.request/method  :post
-                                      :openrouter.request/path    "/chat/completions"
-                                      :openrouter.request/body    {:model "x" :stream true}
-                                      :openrouter.request/stream? true})]
+      (let [c      (client/make-client {::config/api-key "sk-test"})
+            result (request/execute! c {:method  :post
+                                        :path    "/chat/completions"
+                                        :body    {:model "x" :stream true}
+                                        :stream? true})]
         (is (instance? java.io.InputStream result))))))
 
 (deftest non-2xx-throws-anomaly
@@ -47,20 +46,17 @@
                                  :body (json/write-value-as-string
                                         {:error {:message "rate limited"}})})]
     (with-redefs [hato/request stub]
-      (let [client (or-core/make-client {:openrouter.config/api-key "sk-test"})
-            thrown (try (request/execute! client
-                                          {:openrouter.request/method :get
-                                           :openrouter.request/path   "/models"})
+      (let [c      (client/make-client {::config/api-key "sk-test"})
+            thrown (try (request/execute! c {:method :get :path "/models"})
                         (catch clojure.lang.ExceptionInfo e e))]
-        (is (= :busy        (:cognitect.anomalies/category (ex-data thrown))))
+        (is (= :busy          (:cognitect.anomalies/category (ex-data thrown))))
         (is (= "rate limited" (:cognitect.anomalies/message (ex-data thrown))))
-        (is (= 429          (:openrouter.anomaly/status (ex-data thrown))))))))
+        (is (= 429            (:openrouter.anomaly/status (ex-data thrown))))))))
 
 (deftest invalid-envelope-rejected
-  (let [client (or-core/make-client {:openrouter.config/api-key "sk-test"})]
+  (let [c (client/make-client {::config/api-key "sk-test"})]
     (try
-      (request/execute! client {:openrouter.request/method :wat
-                                :openrouter.request/path   "/x"})
+      (request/execute! c {:method :wat :path "/x"})
       (is false "should have thrown")
       (catch clojure.lang.ExceptionInfo e
         (is (= :incorrect (:cognitect.anomalies/category (ex-data e))))))))
@@ -68,11 +64,10 @@
 (deftest optional-headers-included
   (let [[seen stub] (captured-hato {:status 200 :body "{}"})]
     (with-redefs [hato/request stub]
-      (let [client (or-core/make-client
-                    {:openrouter.config/api-key      "sk-test"
-                     :openrouter.config/http-referer "https://app.test"
-                     :openrouter.config/x-title      "My App"})]
-        (request/execute! client {:openrouter.request/method :get
-                                  :openrouter.request/path   "/models"})
+      (let [c (client/make-client
+               {::config/api-key      "sk-test"
+                ::config/http-referer "https://app.test"
+                ::config/x-title      "My App"})]
+        (request/execute! c {:method :get :path "/models"})
         (is (= "https://app.test" (get-in @seen [:headers "HTTP-Referer"])))
         (is (= "My App"           (get-in @seen [:headers "X-Title"])))))))

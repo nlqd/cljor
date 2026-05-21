@@ -3,9 +3,11 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [com.stuartsierra.component :as component]
-            [openrouter.core :as or-client]
+            [openrouter.chat :as chat]
+            [openrouter.config :as-alias config]
             [openrouter.mock-openrouter :as mock]
-            [openrouter.system :as system])
+            [openrouter.system :as system]
+            [openrouter.web :as-alias web])
   (:import [java.io BufferedReader InputStreamReader]
            [java.net HttpURLConnection URL]))
 
@@ -48,10 +50,10 @@
 
 (defn with-system [f]
   (let [sys (component/start
-             (system/system {:openrouter.config/api-key "sk-test"
-                             :openrouter.web/port       0}))]
+             (system/system {::config/api-key "sk-test"
+                             ::web/port       0}))]
     (binding [*system* sys
-              *port*   (server-port (-> sys :openrouter.system/web :jetty))]
+              *port*   (server-port (-> sys ::system/web :jetty))]
       (try (f) (finally (component/stop sys))))))
 
 (use-fixtures :each with-system)
@@ -86,7 +88,7 @@
       (doseq [t tokens]
         (async/>!! ch {:choices [{:delta {:content t}}]}))
       (async/close! ch)
-      (with-redefs [or-client/complete-stream (fn [_ _] ch)]
+      (with-redefs [chat/complete-stream (fn [_ _] ch)]
         (let [events (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
               parsed (read-sse events)
               token-events (filter #(= "token" (:event %)) parsed)]
@@ -98,7 +100,7 @@
     (let [ch (async/chan 2)]
       (async/>!! ch (ex-info "boom" {}))
       (async/close! ch)
-      (with-redefs [or-client/complete-stream (fn [_ _] ch)]
+      (with-redefs [chat/complete-stream (fn [_ _] ch)]
         (let [events (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
               parsed (read-sse events)]
           (is (= 1 (count-events parsed "done"))))))))
@@ -111,7 +113,7 @@
                               :cognitect.anomalies/message  "rate limited"
                               :openrouter.anomaly/status    429}))
       (async/close! ch)
-      (with-redefs [or-client/complete-stream (fn [_ _] ch)]
+      (with-redefs [chat/complete-stream (fn [_ _] ch)]
         (let [events     (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
               parsed     (read-sse events)
               done-event (first (filter #(= "done" (:event %)) parsed))]
@@ -125,7 +127,7 @@
       (async/>!! ch {:choices [{:delta {:content "hi"}}]})
       (async/>!! ch {:choices [{:delta {} :finish_reason "stop"}]})
       (async/close! ch)
-      (with-redefs [or-client/complete-stream (fn [_ _] ch)]
+      (with-redefs [chat/complete-stream (fn [_ _] ch)]
         (let [events (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
               parsed (read-sse events)
               token-events (filter #(= "token" (:event %)) parsed)]
@@ -136,7 +138,7 @@
     (let [ch (async/chan 3)]
       (async/>!! ch {:choices [{:delta {:content "line1\nline2"}}]})
       (async/close! ch)
-      (with-redefs [or-client/complete-stream (fn [_ _] ch)]
+      (with-redefs [chat/complete-stream (fn [_ _] ch)]
         (let [events (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
               parsed (read-sse events)
               token-events (filter #(= "token" (:event %)) parsed)]
@@ -149,10 +151,10 @@
     (let [tokens ["Hello" ", " "world" "!"]
           [mock-server mock-port] (mock/start! tokens)
           sys (component/start
-               (system/system {:openrouter.config/api-key  "sk-test"
-                               :openrouter.config/base-url (str "http://localhost:" mock-port)
-                               :openrouter.web/port        0}))
-          web-port (server-port (-> sys :openrouter.system/web :jetty))]
+               (system/system {::config/api-key  "sk-test"
+                               ::config/base-url (str "http://localhost:" mock-port)
+                               ::web/port        0}))
+          web-port (server-port (-> sys ::system/web :jetty))]
       (try
         (let [events       (read-sse (get-stream (str "http://localhost:" web-port "/stream?q=hello")))
               token-events (filter #(= "token" (:event %)) events)]

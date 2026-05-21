@@ -36,15 +36,25 @@
    [:openrouter.anomaly/body     {:optional true} :any]
    [:openrouter.anomaly/cause    {:optional true} :any]])
 
-(def RequestEnvelope
-  "Data-first request value handed to `openrouter.client/execute!`.
-   The envelope is ours; the inner `:openrouter.request/body` is whatever
-   shape OpenRouter expects on the wire (bare keys)."
+(def Client
+  "A live OpenRouter client value: validated config plus the hato HttpClient
+   that issues requests. Constructed by `openrouter.client/make-client`."
   [:map {:closed true}
-   [:openrouter.request/method [:enum :get :post]]
-   [:openrouter.request/path    :string]
-   [:openrouter.request/body    {:optional true} [:maybe :map]]
-   [:openrouter.request/stream? {:default false} :boolean]])
+   [:openrouter.client/config      Config]
+   [:openrouter.client/http-client [:fn {:error/message "must be non-nil"} some?]]])
+
+(def RequestEnvelope
+  "Data-first request value handed to `openrouter.request/execute!`.
+
+   The shape is a thin mirror over hato's request map; we use bare keys
+   because renaming hato's vocabulary inside our walls would buy no
+   information. `:path` (not `:url`) and `:stream?` are ours; everything
+   else flows straight through to hato."
+  [:map {:closed true}
+   [:method  [:enum :get :post]]
+   [:path    :string]
+   [:body    {:optional true} [:maybe :map]]
+   [:stream? {:default false} :boolean]])
 
 ;;; ── data we mirror from OpenRouter ───────────────────────────────────────────
 

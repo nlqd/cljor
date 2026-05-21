@@ -6,9 +6,9 @@
   "Blocking chat completion. Returns the full API response map."
   [client params]
   (request/execute! client
-                    {:openrouter.request/method :post
-                     :openrouter.request/path   "/chat/completions"
-                     :openrouter.request/body   params}))
+                    {:method :post
+                     :path   "/chat/completions"
+                     :body   params}))
 
 (defn complete-stream
   "Streaming chat completion. Returns a core.async channel of delta maps.
@@ -16,8 +16,8 @@
   [client params]
   (-> (request/execute!
        client
-       {:openrouter.request/method  :post
-        :openrouter.request/path    "/chat/completions"
-        :openrouter.request/body    (assoc params :stream true)
-        :openrouter.request/stream? true})
+       {:method  :post
+        :path    "/chat/completions"
+        :body    (assoc params :stream true)
+        :stream? true})
       sse/event-stream->chan))

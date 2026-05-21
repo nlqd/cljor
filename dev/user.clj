@@ -5,16 +5,18 @@
      (reset)  - stop, reload changed namespaces, restart"
   (:require [clojure.tools.namespace.repl :as repl]
             [com.stuartsierra.component :as component]
-            [openrouter.system :as openrouter]))
+            [openrouter.config :as-alias config]
+            [openrouter.system :as openrouter]
+            [openrouter.web :as-alias web]))
 
 (repl/set-refresh-dirs "src" "dev" "test")
 
 (def ^:private config
-  {:openrouter.config/api-key      (or (System/getenv "OPENROUTER_API_KEY") "sk-dev")
-   :openrouter.config/http-referer "http://localhost:3000"
-   :openrouter.config/x-title      "OpenRouter Chat Dev"
-   :openrouter.web/model           (or (System/getenv "OPENROUTER_MODEL") "openai/gpt-4o-mini")
-   :openrouter.web/port            3000})
+  {::config/api-key      (or (System/getenv "OPENROUTER_API_KEY") "sk-dev")
+   ::config/http-referer "http://localhost:3000"
+   ::config/x-title      "OpenRouter Chat Dev"
+   ::web/model           (or (System/getenv "OPENROUTER_MODEL") "openai/gpt-4o-mini")
+   ::web/port            3000})
 
 (def system nil)
 

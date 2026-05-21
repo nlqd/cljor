@@ -8,7 +8,7 @@
             [reitit.ring.coercion :as rrc]
             [reitit.ring.middleware.parameters :as parameters]
             [ring.core.protocols :as proto]
-            [openrouter.core :as or-client]))
+            [openrouter.chat :as chat]))
 
 ;;; ── HTML page ────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@
 
 (defn- anomaly->payload
   "Encode the anomaly's category and message as a JSON string for the SSE
-   `done` event. Returns empty string when no anomaly is present."
+   `done` event. Empty string when no anomaly is present."
   [a]
   (if-let [cat (:cognitect.anomalies/category a)]
     (json/write-value-as-string
@@ -53,23 +53,39 @@
        (assoc :message (:cognitect.anomalies/message a))))
     ""))
 
-(defn- write-sse! [client model q out]
+(defn- event->token
+  "Extracts the token string from a delta event, or nil if the event has
+   none (finish_reason chunks, errors, etc.)."
+  [event]
+  (when-not (instance? Throwable event)
+    (get-in event [:choices 0 :delta :content])))
+
+(defn- write-tokens!
+  "Drains the channel of complete-stream events, writing one SSE `token`
+   event per non-empty content delta. Returns the anomaly map seen on the
+   channel, or nil if the stream ended cleanly."
+  [w ch]
+  (loop [anomaly nil]
+    (if-let [event (<!! ch)]
+      (if (instance? Throwable event)
+        (recur (ex-data event))
+        (do (when-let [token (event->token event)]
+              (safe-write! w (sse-event "token" token)))
+            (recur anomaly)))
+      anomaly)))
+
+(defn- write-sse!
+  "Pipe a single chat-completion stream to one SSE response: token events
+   followed by exactly one `done` event carrying any anomaly payload."
+  [client model q out]
   (with-open [w (java.io.OutputStreamWriter. out "UTF-8")]
-    (let [!anomaly (volatile! nil)]
-      (try
-        (let [ch (or-client/complete-stream client {:model    model
-                                                    :messages [{:role "user" :content q}]})]
-          (loop []
-            (when-let [event (<!! ch)]
-              (if (instance? Throwable event)
-                (vreset! !anomaly (ex-data event))
-                (do (when-let [token (get-in event [:choices 0 :delta :content])]
-                      (safe-write! w (sse-event "token" token)))
-                    (recur))))))
-        (catch Exception e
-          (vreset! !anomaly (ex-data e)))
-        (finally
-          (safe-write! w (sse-event "done" (anomaly->payload @!anomaly))))))))
+    (let [anomaly (try
+                    (write-tokens! w (chat/complete-stream
+                                      client
+                                      {:model    model
+                                       :messages [{:role "user" :content q}]}))
+                    (catch Exception e (ex-data e)))]
+      (safe-write! w (sse-event "done" (anomaly->payload anomaly))))))
 
 (defn- stream-response [client model q]
   {:status  200
@@ -110,7 +126,7 @@
 (defn- wrap-json-body
   "Coercion errors return Clojure maps as :body. Jetty needs bytes, so we
    JSON-encode any map-bodied response on the way out. Streaming bodies
-   (StreamableResponseBody) and string/byte bodies pass through untouched."
+   and string/byte bodies pass through untouched."
   [handler]
   (fn [req]
     (let [resp (handler req)]
@@ -123,7 +139,7 @@
 (defn make-handler
   "Build a reitit ring handler closing over the OpenRouter client and model.
    No global state; call from a Component during start."
-  [{:openrouter.web/keys [client model]}]
+  [{::keys [client model]}]
   (-> (ring/ring-handler
        (ring/router (routes client model) {:data router-data})
        (ring/routes

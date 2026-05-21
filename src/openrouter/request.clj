@@ -3,14 +3,16 @@
    `execute!`; this namespace is the only place that knows about hato."
   (:require [hato.client :as hato]
             [jsonista.core :as json]
+            [openrouter.client :as-alias client]
+            [openrouter.config :as-alias config]
             [openrouter.error :as error]
             [openrouter.schema :as schema]))
 
 (defn- url [config path]
-  (str (:openrouter.config/base-url config) path))
+  (str (::config/base-url config) path))
 
 (defn- base-headers
-  [{:openrouter.config/keys [api-key http-referer x-title]}]
+  [{::config/keys [api-key http-referer x-title]}]
   (cond-> {"Authorization" (str "Bearer " api-key)
            "Content-Type"  "application/json"
            "Accept"        "application/json"
@@ -19,13 +21,13 @@
     x-title      (assoc "X-Title"      x-title)))
 
 (defn- envelope->hato-opts
-  [{:openrouter.client/keys [config http-client]}
-   {:openrouter.request/keys [method path body stream?]}]
+  [{::client/keys [config http-client]}
+   {:keys [method path body stream?]}]
   (cond-> {:method      method
            :url         (url config path)
            :http-client http-client
            :headers     (base-headers config)
-           :timeout     (:openrouter.config/timeout-ms config)
+           :timeout     (::config/timeout-ms config)
            :as          (if stream? :stream :string)}
     body (assoc :body (json/write-value-as-string body))))
 
@@ -38,7 +40,7 @@
   [client envelope]
   (let [env  (schema/coerce! schema/RequestEnvelope envelope)
         resp (hato/request (envelope->hato-opts client env))]
-    (if (:openrouter.request/stream? env)
+    (if (:stream? env)
       (do (error/check-status! (:status resp))
           (:body resp))
       (-> resp

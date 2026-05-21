@@ -1,19 +1,20 @@
 (ns openrouter.schema-test
   (:require [clojure.test :refer [deftest is testing]]
             [malli.core :as m]
+            [openrouter.config :as-alias config]
             [openrouter.schema :as schema]))
 
 (deftest config-schema
   (testing "happy path"
     (is (m/validate schema/Config
-                    {:openrouter.config/api-key    "sk-test"
-                     :openrouter.config/base-url   "https://x"
-                     :openrouter.config/timeout-ms 1000})))
+                    {::config/api-key    "sk-test"
+                     ::config/base-url   "https://x"
+                     ::config/timeout-ms 1000})))
 
   (testing "defaults applied by coerce!"
-    (let [c (schema/coerce! schema/Config {:openrouter.config/api-key "sk-test"})]
-      (is (= "https://openrouter.ai/api/v1" (:openrouter.config/base-url c)))
-      (is (= 30000 (:openrouter.config/timeout-ms c)))))
+    (let [c (schema/coerce! schema/Config {::config/api-key "sk-test"})]
+      (is (= "https://openrouter.ai/api/v1" (::config/base-url c)))
+      (is (= 30000 (::config/timeout-ms c)))))
 
   (testing "missing api-key throws anomaly"
     (try
@@ -31,16 +32,15 @@
 
 (deftest request-envelope-schema
   (is (m/validate schema/RequestEnvelope
-                  {:openrouter.request/method  :post
-                   :openrouter.request/path    "/chat/completions"
-                   :openrouter.request/body    {:model "x" :messages []}
-                   :openrouter.request/stream? true}))
+                  {:method  :post
+                   :path    "/chat/completions"
+                   :body    {:model "x" :messages []}
+                   :stream? true}))
 
   (testing "stream? default"
     (let [env (schema/coerce! schema/RequestEnvelope
-                              {:openrouter.request/method :get
-                               :openrouter.request/path   "/models"})]
-      (is (false? (:openrouter.request/stream? env))))))
+                              {:method :get :path "/models"})]
+      (is (false? (:stream? env))))))
 
 (deftest message-and-chat-request
   (is (m/validate schema/Message {:role "user" :content "hi"}))
