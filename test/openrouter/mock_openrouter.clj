@@ -11,8 +11,8 @@
 (defn- sse-chunk [token]
   (str "data: "
        (json/write-value-as-string
-         {:id      "mock-1"
-          :choices [{:delta {:content token} :finish_reason nil}]})
+        {:id      "mock-1"
+         :choices [{:delta {:content token} :finish_reason nil}]})
        "\n\n"))
 
 (defn- stream-body [tokens]

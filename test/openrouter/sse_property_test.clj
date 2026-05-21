@@ -45,20 +45,20 @@
 
 (defspec sse-roundtrip-for-arbitrary-tokens 200
   (prop/for-all [tokens (gen/vector gen/string-ascii)]
-    (let [deltas (mapv (fn [t] {:choices [{:delta {:content t}}]}) tokens)]
-      (= deltas (roundtrip deltas)))))
+                (let [deltas (mapv (fn [t] {:choices [{:delta {:content t}}]}) tokens)]
+                  (= deltas (roundtrip deltas)))))
 
 ;;; ── property 2: malli-generated StreamDeltas roundtrip ───────────────────────
 
 (defspec sse-roundtrip-for-malli-generated-deltas 100
   (prop/for-all [deltas (gen/vector (mg/generator schema/StreamDelta) 0 5)]
-    (= deltas (roundtrip deltas))))
+                (= deltas (roundtrip deltas))))
 
 ;;; ── property 3: config coerce! is idempotent on already-valid input ──────────
 
 (defspec config-coerce-idempotent 50
   (prop/for-all [cfg (mg/generator schema/Config)]
-    (= cfg (schema/coerce! schema/Config cfg))))
+                (= cfg (schema/coerce! schema/Config cfg))))
 
 ;;; ── property 4: anomalies built by error builder always validate ─────────────
 
@@ -67,4 +67,4 @@
                  body   (gen/one-of
                          [(gen/return {})
                           (gen/return {:error {:message "boom"}})])]
-    (m/validate schema/Anomaly (error/http-anomaly status body))))
+                (m/validate schema/Anomaly (error/http-anomaly status body))))

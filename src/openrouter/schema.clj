@@ -30,7 +30,7 @@
   [:map {:closed true}
    [:cognitect.anomalies/category
     [:enum :unavailable :busy :not-found :forbidden
-           :fault :incorrect :interrupted :unsupported]]
+     :fault :incorrect :interrupted :unsupported]]
    [:cognitect.anomalies/message {:optional true} :string]
    [:openrouter.anomaly/status   {:optional true} :int]
    [:openrouter.anomaly/body     {:optional true} :any]
