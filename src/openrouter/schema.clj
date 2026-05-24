@@ -97,5 +97,5 @@
       (throw
        (ex-info "schema validation failed"
                 {:cognitect.anomalies/category :incorrect
-                 :cognitect.anomalies/message  (pr-str (explain schema value))
+                 :cognitect.anomalies/message  (pr-str (explain schema decoded))
                  :openrouter.anomaly/body      value})))))

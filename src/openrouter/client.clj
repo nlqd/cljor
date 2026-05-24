@@ -4,11 +4,10 @@
    `openrouter.request`."
   (:require [hato.client :as hato]
             [openrouter.config :as config]
-            [openrouter.config :as-alias config-keys]
             [openrouter.schema :as schema]))
 
 (defn- build-http-client [cfg]
-  (hato/build-http-client {:connect-timeout (::config-keys/timeout-ms cfg)
+  (hato/build-http-client {:connect-timeout (::config/timeout-ms cfg)
                            :redirect-policy :always}))
 
 (defn make-client

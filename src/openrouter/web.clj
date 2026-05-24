@@ -40,7 +40,7 @@
        "\n\n"))
 
 (defn- safe-write! [w s]
-  (try (.write w s) (.flush w) (catch Exception _)))
+  (try (.write w s) (.flush w) (catch java.io.IOException _)))
 
 (defn- anomaly->payload
   "Encode the anomaly's category and message as a JSON string for the SSE
