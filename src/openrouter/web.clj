@@ -68,23 +68,24 @@
    channel is idle longer than `keepalive-ms`. Returns the anomaly map
    seen on the channel, or nil if the stream ended cleanly."
   [w ch]
-  (loop [anomaly nil]
-    (let [[event port] (alts!! [ch (async/timeout keepalive-ms)])]
+  (loop [anomaly    nil
+         timeout-ch (async/timeout keepalive-ms)]
+    (let [[event port] (alts!! [ch timeout-ch])]
       (cond
         (and (nil? event) (= port ch))
         anomaly
 
         (nil? event)
         (do (safe-write! w (sse-event "keepalive" ""))
-            (recur anomaly))
+            (recur anomaly (async/timeout keepalive-ms)))
 
         (instance? Throwable event)
-        (recur (ex-data event))
+        (recur (ex-data event) timeout-ch)
 
         :else
         (do (when-let [token (event->token event)]
               (safe-write! w (sse-event "token" token)))
-            (recur anomaly))))))
+            (recur anomaly timeout-ch))))))
 
 (defn- write-sse!
   "Pipe a single chat-completion stream to one SSE response: token events

@@ -80,7 +80,7 @@
     ;; closes the InputStream.
     (.write w ": keepalive\n")
     (.flush w)
-    (Thread/sleep 100)
+    (Thread/sleep 500)
     (is (thrown? java.io.IOException
                 (do (.write w "more data\n")
                     (.flush w))))))
