@@ -1,5 +1,5 @@
 (ns openrouter.web
-  (:require [clojure.core.async :refer [<!!]]
+  (:require [clojure.core.async :as async :refer [alts!!]]
             [clojure.string :as str]
             [hiccup2.core :refer [html]]
             [jsonista.core :as json]
@@ -60,19 +60,31 @@
   (when-not (instance? Throwable event)
     (get-in event [:choices 0 :delta :content])))
 
+(def keepalive-ms 15000)
+
 (defn- write-tokens!
   "Drains the channel of complete-stream events, writing one SSE `token`
-   event per non-empty content delta. Returns the anomaly map seen on the
-   channel, or nil if the stream ended cleanly."
+   event per non-empty content delta. Sends keepalive events when the
+   channel is idle longer than `keepalive-ms`. Returns the anomaly map
+   seen on the channel, or nil if the stream ended cleanly."
   [w ch]
   (loop [anomaly nil]
-    (if-let [event (<!! ch)]
-      (if (instance? Throwable event)
+    (let [[event port] (alts!! [ch (async/timeout keepalive-ms)])]
+      (cond
+        (and (nil? event) (= port ch))
+        anomaly
+
+        (nil? event)
+        (do (safe-write! w (sse-event "keepalive" ""))
+            (recur anomaly))
+
+        (instance? Throwable event)
         (recur (ex-data event))
+
+        :else
         (do (when-let [token (event->token event)]
               (safe-write! w (sse-event "token" token)))
-            (recur anomaly)))
-      anomaly)))
+            (recur anomaly))))))
 
 (defn- write-sse!
   "Pipe a single chat-completion stream to one SSE response: token events

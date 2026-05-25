@@ -7,7 +7,7 @@
             [openrouter.config :as-alias config]
             [openrouter.mock-openrouter :as mock]
             [openrouter.system :as system]
-            [openrouter.web :as-alias web])
+            [openrouter.web :as web])
   (:import [java.io BufferedReader InputStreamReader]
            [java.net HttpURLConnection URL]))
 
@@ -163,3 +163,18 @@
         (finally
           (component/stop sys)
           (mock/stop! [mock-server]))))))
+
+(deftest stream-sends-keepalive-during-idle
+  (testing "a slow stream produces keepalive events between tokens"
+    (let [ch (async/chan 10)]
+      (async/>!! ch {:choices [{:delta {:content "hi"}}]})
+      (async/thread
+        (Thread/sleep 2500)
+        (async/close! ch))
+      (with-redefs [chat/complete-stream (fn [_ _] ch)
+                    web/keepalive-ms     1000]
+        (let [events (get-stream (str "http://localhost:" *port* "/stream?q=hi"))
+              parsed (read-sse events)]
+          (is (>= (count-events parsed "token") 1))
+          (is (>= (count-events parsed "keepalive") 1))
+          (is (= 1 (count-events parsed "done"))))))))
