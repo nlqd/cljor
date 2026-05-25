@@ -69,14 +69,31 @@
    [:messages [:vector Message]]
    [:stream   {:optional true} :boolean]])
 
+(def StreamError
+  "Mid-stream error from the provider, delivered inside a data event."
+  [:map
+   [:code :string]
+   [:message {:optional true} :string]])
+
 (def StreamDelta
-  "A single SSE chunk decoded from `data: {...}`."
+  "A single SSE chunk decoded from `data: {...}`.
+   Open map: forward-compatible with new fields OpenRouter may add."
   [:map
    [:choices
     [:vector
      [:map
       [:delta         [:map [:content {:optional true} [:maybe :string]]]]
-      [:finish_reason {:optional true} [:maybe :string]]]]]])
+      [:finish_reason {:optional true} [:maybe :string]]]]]
+   [:id       {:optional true} :string]
+   [:object   {:optional true} :string]
+   [:created  {:optional true} :int]
+   [:model    {:optional true} :string]
+   [:provider {:optional true} :string]
+   [:error    {:optional true} StreamError]
+   [:usage    {:optional true} [:map
+                                [:prompt_tokens     :int]
+                                [:completion_tokens :int]
+                                [:total_tokens      :int]]]])
 
 ;;; ── helpers ──────────────────────────────────────────────────────────────────
 

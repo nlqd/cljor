@@ -55,3 +55,37 @@
   (testing "finish_reason chunk with no content"
     (is (m/validate schema/StreamDelta
                     {:choices [{:delta {} :finish_reason "stop"}]}))))
+
+(deftest stream-error-schema
+  (is (m/validate schema/StreamError
+                  {:code "server_error" :message "Provider disconnected"}))
+  (is (m/validate schema/StreamError
+                  {:code "timeout"}))
+  (is (not (m/validate schema/StreamError {}))))
+
+(deftest stream-delta-accepts-wire-format
+  (testing "full OpenRouter chunk with metadata"
+    (is (m/validate schema/StreamDelta
+                    {:id       "cmpl-abc123"
+                     :object   "chat.completion.chunk"
+                     :created  1234567890
+                     :model    "openai/gpt-4o"
+                     :provider "openai"
+                     :choices  [{:index         0
+                                 :delta         {:content "Hello"}
+                                 :finish_reason nil}]})))
+  (testing "error chunk"
+    (is (m/validate schema/StreamDelta
+                    {:id      "cmpl-abc123"
+                     :choices [{:index         0
+                                :delta         {:content ""}
+                                :finish_reason "error"}]
+                     :error   {:code    "server_error"
+                               :message "Provider disconnected"}})))
+  (testing "usage in final chunk"
+    (is (m/validate schema/StreamDelta
+                    {:id      "cmpl-abc123"
+                     :choices [{:delta {} :finish_reason "stop"}]
+                     :usage   {:prompt_tokens     10
+                               :completion_tokens 5
+                               :total_tokens      15}}))))
