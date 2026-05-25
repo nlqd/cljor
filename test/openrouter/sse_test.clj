@@ -56,6 +56,16 @@
       (is (= "stop" (get-in stop-event [:choices 0 :finish_reason]))))
     (is (nil? (<!! ch)))))
 
+(deftest ignores-openrouter-processing-comments
+  (let [ch (sse/event-stream->chan
+            (stream-of ": OPENROUTER PROCESSING"
+                       ""
+                       ": OPENROUTER PROCESSING"
+                       (make-event "hi")
+                       "data: [DONE]"))]
+    (is (= "hi" (get-in (<!! ch) [:choices 0 :delta :content])))
+    (is (nil? (<!! ch)))))
+
 (deftest consumer-cancellation-stops-reading
   (let [pipe-in  (java.io.PipedInputStream.)
         pipe-out (java.io.PipedOutputStream. pipe-in)
