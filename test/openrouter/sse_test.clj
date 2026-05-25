@@ -30,3 +30,28 @@
   (let [ch (sse/event-stream->chan (stream-of (make-event "x")))]
     (<!! ch)
     (is (nil? (<!! ch)))))
+
+(deftest detects-mid-stream-error
+  (let [ch (sse/event-stream->chan
+            (stream-of
+             (make-event "partial")
+             "data: {\"id\":\"x\",\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":\"error\"}],\"error\":{\"code\":\"server_error\",\"message\":\"Provider disconnected\"}}"
+             "data: [DONE]"))]
+    (is (= "partial" (get-in (<!! ch) [:choices 0 :delta :content])))
+    (let [err (<!! ch)]
+      (is (instance? Throwable err))
+      (is (= :fault (:cognitect.anomalies/category (ex-data err))))
+      (is (= "Provider disconnected" (:cognitect.anomalies/message (ex-data err)))))
+    (is (nil? (<!! ch)))))
+
+(deftest non-error-finish-reasons-pass-through
+  (let [ch (sse/event-stream->chan
+            (stream-of
+             (make-event "done")
+             "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}"
+             "data: [DONE]"))]
+    (is (some? (<!! ch)))
+    (let [stop-event (<!! ch)]
+      (is (map? stop-event))
+      (is (= "stop" (get-in stop-event [:choices 0 :finish_reason]))))
+    (is (nil? (<!! ch)))))

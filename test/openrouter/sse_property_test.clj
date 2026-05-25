@@ -50,9 +50,14 @@
 
 ;;; ── property 2: malli-generated StreamDeltas roundtrip ───────────────────────
 
+(defn- is-error-event? [delta]
+  (or (:error delta)
+      (= "error" (get-in delta [:choices 0 :finish_reason]))))
+
 (defspec sse-roundtrip-for-malli-generated-deltas 100
   (prop/for-all [deltas (gen/vector (mg/generator schema/StreamDelta) 0 5)]
-                (= deltas (roundtrip deltas))))
+                (let [safe (vec (remove is-error-event? deltas))]
+                  (= safe (roundtrip safe)))))
 
 ;;; ── property 3: config coerce! is idempotent on already-valid input ──────────
 
