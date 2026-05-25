@@ -73,3 +73,17 @@
                          [(gen/return {})
                           (gen/return {:error {:message "boom"}})])]
                 (m/validate schema/Anomaly (error/http-anomaly status body))))
+
+;;; ── property 5: error events become throwable anomalies ─────────────────────
+
+(defspec error-events-become-throwables 50
+  (prop/for-all [code    gen/string-alphanumeric
+                 message gen/string-ascii]
+                (let [error-event {:choices [{:delta         {:content ""}
+                                             :finish_reason "error"}]
+                                   :error   {:code code :message message}}
+                      result      (roundtrip [error-event])]
+                  (and (= 1 (count result))
+                       (instance? Throwable (first result))
+                       (= :fault (:cognitect.anomalies/category
+                                  (ex-data (first result))))))))
