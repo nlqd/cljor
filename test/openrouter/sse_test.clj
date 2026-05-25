@@ -1,5 +1,5 @@
 (ns openrouter.sse-test
-  (:require [clojure.core.async :refer [<!!]]
+  (:require [clojure.core.async :as async :refer [<!!]]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [openrouter.sse :as sse])
@@ -55,3 +55,22 @@
       (is (map? stop-event))
       (is (= "stop" (get-in stop-event [:choices 0 :finish_reason]))))
     (is (nil? (<!! ch)))))
+
+(deftest consumer-cancellation-stops-reading
+  (let [pipe-in  (java.io.PipedInputStream.)
+        pipe-out (java.io.PipedOutputStream. pipe-in)
+        w        (java.io.OutputStreamWriter. pipe-out "UTF-8")
+        _        (do (.write w (str (make-event "first") "\n"))
+                     (.flush w))
+        ch       (sse/event-stream->chan pipe-in)]
+    (is (= "first" (get-in (<!! ch) [:choices 0 :delta :content])))
+    (async/close! ch)
+    ;; Send another line to unblock .readLine — mimics server keepalive.
+    ;; The >!! on the closed channel returns false, loop exits, with-open
+    ;; closes the InputStream.
+    (.write w ": keepalive\n")
+    (.flush w)
+    (Thread/sleep 100)
+    (is (thrown? java.io.IOException
+                (do (.write w "more data\n")
+                    (.flush w))))))

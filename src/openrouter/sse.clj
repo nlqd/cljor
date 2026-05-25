@@ -33,15 +33,22 @@
 
 (defn event-stream->chan
   "Parses an SSE InputStream into a core.async channel of decoded maps.
-   The channel closes after [DONE] or stream end. Parse errors land on
-   the channel as Throwables via the channel's exception handler."
+   The channel closes after [DONE] or stream end.
+
+   Closing the channel cancels the stream: the next line read from the
+   InputStream triggers a >!! that returns false, exiting the reader
+   loop and closing the InputStream via with-open. In practice this is
+   near-instant because OpenRouter sends keepalive comments every few
+   seconds, ensuring .readLine returns periodically."
   [^InputStream input-stream & {:keys [buf-size] :or {buf-size 32}}]
   (let [ch (async/chan buf-size event-xform identity)]
     (async/thread
       (try
         (with-open [reader (BufferedReader. (InputStreamReader. input-stream "UTF-8"))]
-          (doseq [line (line-seq reader)]
-            (async/>!! ch line)))
+          (loop []
+            (when-let [line (.readLine reader)]
+              (when (async/>!! ch line)
+                (recur)))))
         (catch Throwable t
           (async/>!! ch t))
         (finally
